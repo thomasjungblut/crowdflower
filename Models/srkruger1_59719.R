@@ -5,7 +5,6 @@
 # 0.681048  0.37856  0.01494788   0.03006305
 require(readr)
 require(stringr)
-require(caret)
 require(tau)
 require(tm)
 
@@ -118,19 +117,23 @@ pp <- preProcess(trainPD, "pca")
 trainPD <- predict(pp, trainPD)
 testPD <- predict(pp, testPD)
 
-save.image("work.RData")
-load("work.RData")
+#I need to save my session here and start
+#a new one, or else I run out of memory
+# save.image("work.RData")
+# load("work.RData")
 
-gc(reset=T)
+source("QWK.R")
+require(caret)
+require(Metrics)
 
 set.seed(65812)
-fc <- trainControl(method = "repeatedCV",
+fc <- trainControl(method = "repeatedCV", summaryFunction=QWK,
                       number = 10, repeats = 1, verboseIter = TRUE, 
                       returnResamp = "all", classProbs = TRUE)
 tGrid <- expand.grid(interaction.depth = 9, shrinkage = 0.1, n.trees = 50)
 
 model <- train(x = cbind(myTrain, trainPT, trainPD), y = target, method = "gbm", trControl = fc, 
-                  tuneGrid = tGrid, metric = "Accuracy") #
+                  tuneGrid = tGrid, metric = "QWK") #
 model
 confusionMatrix.train(model)
 
