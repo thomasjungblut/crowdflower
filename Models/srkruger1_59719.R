@@ -1,8 +1,8 @@
 #LB SCORE = 0.59719
 
 # 10 fold CV
-# Accuracy  Kappa    Accuracy SD  Kappa SD  
-# 0.681048  0.37856  0.01494788   0.03006305
+# QWK        QWK SD    
+# 0.5992546  0.03097671
 require(readr)
 require(stringr)
 require(tau)
@@ -34,10 +34,6 @@ for(i in 1:nrow(train))
 }
 myTrain <- data.frame(qit = factor(queryInTitle, labels=c("F", "T")), qc = queryCoverage,
                          qw = qWords, ptw = ptWords, pdw = pdWords)
-write.csv(cbind(id = train$id, myTrain, median_relevance = train$median_relevance, 
-                relevance_variance = train$relevance_variance), 
-          "simpleTrain.csv", 
-          row.names = FALSE)
 
 queryInTitle <- rep(FALSE, nrow(test))
 queryCoverage <- rep(0, nrow(test))
@@ -60,7 +56,6 @@ for(i in 1:nrow(test))
 }
 myTest <- data.frame(qit = factor(queryInTitle, labels=c("F", "T")), qc = queryCoverage,
                         qw = qWords, ptw = ptWords, pdw = pdWords)
-write.csv(cbind(id = test$id, myTest), "simpleTest.csv", row.names = FALSE)
 
 myTrain <- cbind(myTrain, q = factor(train$query))
 myTest <- cbind(myTest, q = factor(test$query))
