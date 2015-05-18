@@ -159,8 +159,6 @@ public class NaiveBayesCrowdFlower {
         tokenBag.addAll(Arrays.asList(tokens));
         tokens = TokenizerUtils.addStartAndEndTags(tokens);
         tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 2)));
-        tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 3)));
-        tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 4)));
 
         documents.add(tokenBag.toArray(new String[tokenBag.size()]));
         if (!isTest) {
