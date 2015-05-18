@@ -13,6 +13,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.tartarus.snowball.SnowballStemmer;
+import org.tartarus.snowball.ext.englishStemmer;
+
 import au.com.bytecode.opencsv.CSVReader;
 
 import com.google.common.base.Preconditions;
@@ -20,15 +23,178 @@ import com.google.common.base.Preconditions;
 import de.jungblut.classification.bayes.MultinomialNaiveBayes;
 import de.jungblut.math.DoubleVector;
 import de.jungblut.math.dense.DenseDoubleVector;
-import de.jungblut.math.tuple.Tuple;
 import de.jungblut.nlp.TokenizerUtils;
 import de.jungblut.nlp.VectorizerUtils;
 
 public class NaiveBayesCrowdFlower {
 
+  private enum PrepMode {
+    QUERY, TITLE, QUERY_AND_TITLE
+  }
+
+  private List<String> ids;
+  private List<String[]> dicts;
+  private DoubleVector[] trainVectors;
+  private DoubleVector[] outcomes;
+
+  private AveragingClassifier model;
+  private List<String[]> documents;
+
+  private void test(Path path, String testOutputPath) throws IOException {
+
+    List<List<DoubleVector>> trainMatrix = new ArrayList<>();
+    for (int i = 0; i < PrepMode.values().length; i++) {
+      PrepMode mode = PrepMode.values()[i];
+      prep(path, true, mode);
+      vectorize(dicts.get(i));
+
+      if (i == 0) {
+        for (int n = 0; n < trainVectors.length; n++) {
+          trainMatrix.add(new ArrayList<>());
+        }
+      }
+      for (int n = 0; n < trainVectors.length; n++) {
+        List<DoubleVector> list = trainMatrix.get(n);
+        list.add(trainVectors[n]);
+      }
+    }
+
+    try (BufferedWriter writer = new BufferedWriter(new FileWriter(
+        testOutputPath + path.getFileName()))) {
+      writer.write("\"id\",\"prediction\"\n");
+      for (int i = 0; i < trainMatrix.size(); i++) {
+
+        model.setFeatures(trainMatrix.get(i));
+        DoubleVector predicted = model.predict(null);
+
+        // DoubleVector predicted = model.predictProbability(trainVectors[i]);
+        writer.write(ids.get(i) + "," + (predicted.maxIndex() + 1) + "\n");
+      }
+    }
+  }
+
+  private void train(Path path) throws IOException {
+
+    dicts = new ArrayList<>();
+    List<MultinomialNaiveBayes> subModels = new ArrayList<>();
+    for (int i = 0; i < PrepMode.values().length; i++) {
+      PrepMode mode = PrepMode.values()[i];
+      prep(path, false, mode);
+      String[] dict = null;
+      if (mode == PrepMode.QUERY_AND_TITLE) {
+        dict = VectorizerUtils.buildDictionary(documents.stream(), 0.2f, 3);
+      } else {
+        dict = VectorizerUtils.buildDictionary(documents.stream(), 1f, 0);
+      }
+      dicts.add(dict);
+      vectorize(dict);
+
+      MultinomialNaiveBayes m = new MultinomialNaiveBayes();
+      m.train(trainVectors, outcomes);
+      subModels.add(m);
+    }
+
+    model = new AveragingClassifier(subModels);
+
+  }
+
+  public void vectorize(String[] dict) {
+    trainVectors = VectorizerUtils.wordFrequencyVectorize(documents.stream(),
+        dict).toArray(i -> new DoubleVector[i]);
+  }
+
+  private void prep(Path path, boolean isTest, PrepMode mode)
+      throws IOException {
+
+    ids = new ArrayList<>();
+    final SnowballStemmer stemmer = new englishStemmer();
+
+    final DoubleVector ONE = new DenseDoubleVector(new double[] { 1d, 0, 0, 0 });
+    final DoubleVector TWO = new DenseDoubleVector(new double[] { 0, 1d, 0, 0 });
+    final DoubleVector THREE = new DenseDoubleVector(
+        new double[] { 0, 0, 1d, 0 });
+    final DoubleVector FOUR = new DenseDoubleVector(
+        new double[] { 0, 0, 0, 1d });
+
+    final int idIndex = 0;
+    final int queryIndex = 1;
+    final int titleIndex = 2;
+    // final int descriptionIndex = 3;
+    final int outcomeIndex = 4;
+
+    List<DoubleVector> outcomesList = new ArrayList<>();
+    documents = new ArrayList<>();
+    try (CSVReader reader = new CSVReader(new BufferedReader(new FileReader(
+        path.toFile())), ',', '"', 1)) {
+
+      String[] line;
+      while ((line = reader.readNext()) != null) {
+
+        ids.add(line[idIndex]);
+        List<String> tokenBag = new ArrayList<>();
+        String fullText = "";
+
+        switch (mode) {
+          case QUERY:
+            fullText = line[queryIndex];
+            break;
+          case TITLE:
+            fullText = line[titleIndex];
+            break;
+          case QUERY_AND_TITLE:
+            fullText = line[queryIndex] + " " + line[titleIndex];
+            break;
+        }
+
+        fullText = TokenizerUtils.normalizeString(fullText);
+
+        String[] tokens = TokenizerUtils.whiteSpaceTokenize(fullText);
+        for (int i = 0; i < tokens.length; i++) {
+          stemmer.setCurrent(tokens[i]);
+          if (stemmer.stem()) {
+            tokens[i] = stemmer.getCurrent();
+          }
+        }
+
+        tokenBag.addAll(Arrays.asList(tokens));
+        tokens = TokenizerUtils.addStartAndEndTags(tokens);
+        tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 2)));
+        tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 3)));
+        tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 4)));
+
+        documents.add(tokenBag.toArray(new String[tokenBag.size()]));
+        if (!isTest) {
+          switch (Integer.parseInt(line[outcomeIndex])) {
+            case 1:
+              outcomesList.add(ONE);
+              break;
+            case 2:
+              outcomesList.add(TWO);
+              break;
+            case 3:
+              outcomesList.add(THREE);
+              break;
+            case 4:
+              outcomesList.add(FOUR);
+              break;
+            default:
+              throw new IllegalArgumentException("unknown case");
+          }
+        }
+      }
+
+      if (!isTest) {
+        Preconditions.checkArgument(documents.size() == outcomesList.size(),
+            "docs/outcomes number of files didn't match");
+      }
+
+      outcomes = outcomesList.toArray(new DoubleVector[outcomesList.size()]);
+    }
+  }
+
   public static void main(String[] args) throws IOException {
     String basePath = "/Users/thomas.jungblut/git/crowdflower/ValidationFolds/";
-    String testOutputPath = "/Users/thomas.jungblut/git/crowdflower/Models/NaiveBayes/CvFoldsOutput/";
+    String testOutputPath = "/Users/thomas.jungblut/git/crowdflower/Models/NaiveBayes/";
 
     if (args.length > 0) {
       basePath = args[0];
@@ -57,116 +223,22 @@ public class NaiveBayesCrowdFlower {
               .getFileName().toString().split("-")[0]),
           "train/test fold files didn't match each other.");
 
-      Tuple<String[], MultinomialNaiveBayes> model = train(trainFile);
+      NaiveBayesCrowdFlower inst = new NaiveBayesCrowdFlower();
 
-      test(testFile, testOutputPath, model);
+      inst.train(trainFile);
+
+      inst.test(testFile, testOutputPath + "CvFoldsOutput/");
 
       System.out.print("\rFold " + (i + 1) + "/" + trainFiles.size());
     }
-    System.out.println("Done.");
-  }
 
-  private static void test(Path path, String testOutputPath,
-      Tuple<String[], MultinomialNaiveBayes> modelTuple) throws IOException {
-    Tuple<List<String[]>, DoubleVector[]> prep = prep(path, true);
-    String[] dict = modelTuple.getFirst();
-    MultinomialNaiveBayes classifier = modelTuple.getSecond();
-    List<String[]> documents = prep.getFirst();
+    System.out.println("\n\npredicting kaggle test set");
 
-    DoubleVector[] predVectors = VectorizerUtils.wordFrequencyVectorize(
-        documents.stream(), dict).toArray(i -> new DoubleVector[i]);
+    NaiveBayesCrowdFlower inst = new NaiveBayesCrowdFlower();
+    inst.train(Paths.get(basePath).resolveSibling("Raw/train.csv"));
+    inst.test(Paths.get(basePath).resolveSibling("Raw/test.csv"),
+        testOutputPath + "Submission/");
 
-    try (BufferedWriter writer = new BufferedWriter(new FileWriter(
-        testOutputPath + path.getFileName()))) {
-      writer.write("lineNumber,predictedClass\n");
-      for (int i = 0; i < predVectors.length; i++) {
-        DoubleVector predicted = classifier.predict(predVectors[i]);
-        writer.write(i + "," + (predicted.maxIndex() + 1) + "\n");
-      }
-    }
-
-  }
-
-  private static Tuple<String[], MultinomialNaiveBayes> train(Path path)
-      throws IOException {
-    Tuple<List<String[]>, DoubleVector[]> prep = prep(path, false);
-    List<String[]> documents = prep.getFirst();
-    DoubleVector[] outcomes = prep.getSecond();
-
-    String[] dict = VectorizerUtils
-        .buildDictionary(documents.stream(), 0.5f, 3);
-    DoubleVector[] trainVectors = VectorizerUtils.wordFrequencyVectorize(
-        documents.stream(), dict).toArray(i -> new DoubleVector[i]);
-
-    MultinomialNaiveBayes model = new MultinomialNaiveBayes();
-    model.train(trainVectors, outcomes);
-
-    return new Tuple<>(dict, model);
-  }
-
-  private static Tuple<List<String[]>, DoubleVector[]> prep(Path path,
-      boolean isTest) throws IOException {
-
-    final DoubleVector ONE = new DenseDoubleVector(new double[] { 1d, 0, 0, 0 });
-    final DoubleVector TWO = new DenseDoubleVector(new double[] { 0, 1d, 0, 0 });
-    final DoubleVector THREE = new DenseDoubleVector(
-        new double[] { 0, 0, 1d, 0 });
-    final DoubleVector FOUR = new DenseDoubleVector(
-        new double[] { 0, 0, 0, 1d });
-
-    final int queryIndex = 1;
-    final int titleIndex = 2;
-    final int descriptionIndex = 3;
-    final int outcomeIndex = 4;
-
-    List<DoubleVector> outcomes = new ArrayList<>();
-    List<String[]> documents = new ArrayList<>();
-    try (CSVReader reader = new CSVReader(new BufferedReader(new FileReader(
-        path.toFile())), ',', '"', 1)) {
-
-      String[] line;
-      while ((line = reader.readNext()) != null) {
-
-        List<String> tokenBag = new ArrayList<>();
-        String fullText = line[queryIndex];
-        fullText += " " + line[titleIndex];
-        // FIXME don't use the description as it is too spammy
-        // fullText += " " + Jsoup.parse(line[descriptionIndex]).text();
-
-        fullText = TokenizerUtils.normalizeString(fullText);
-
-        String[] tokens = TokenizerUtils.wordTokenize(fullText);
-        tokenBag.addAll(Arrays.asList(tokens));
-        tokenBag.addAll(Arrays.asList(TokenizerUtils.buildNGrams(tokens, 2)));
-
-        documents.add(tokenBag.toArray(new String[tokenBag.size()]));
-        if (!isTest) {
-          switch (Integer.parseInt(line[outcomeIndex])) {
-            case 1:
-              outcomes.add(ONE);
-              break;
-            case 2:
-              outcomes.add(TWO);
-              break;
-            case 3:
-              outcomes.add(THREE);
-              break;
-            case 4:
-              outcomes.add(FOUR);
-              break;
-            default:
-              throw new IllegalArgumentException("unknown case");
-          }
-        }
-      }
-
-      if (!isTest) {
-        Preconditions.checkArgument(documents.size() == outcomes.size(),
-            "docs/outcomes number of files didn't match");
-      }
-
-      return new Tuple<>(documents, outcomes.toArray(new DoubleVector[outcomes
-          .size()]));
-    }
+    System.out.println("\nDone.");
   }
 }

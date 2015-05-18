@@ -20,7 +20,7 @@ CVQKW <- function (cvOutputPath, modelCvOutputPath)
   foldKappa <- rep(0, length(modelOutputFolds))
   
   for(i in 1:length(modelOutputFolds)) {  
-    prediction <- as.numeric(read_csv(paste(modelCvOutputPath, modelOutputFolds[i], sep = ""))$predictedClass)
+    prediction <- as.numeric(read_csv(paste(modelCvOutputPath, modelOutputFolds[i], sep = ""))$prediction)
     outcome <- as.numeric(read_csv(paste(cvOutputPath, modelOutputFolds[i], sep = ""))$median_relevance)
     
     if(length(prediction) != length(outcome)) {
