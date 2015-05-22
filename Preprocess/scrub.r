@@ -18,6 +18,8 @@ scrub_data <- function(doc_vector) {
     corpus <- tm_map(corpus, removePunctuation)
     # Everything in lower case
     corpus <- tm_map(corpus, content_transformer(tolower))
+    # No unicode or other funny characters...
+    corpus <- tm_map(corpus, content_transformer(function(x) gsub("[^[:alnum:]]", " ", x)))
     # 12382 -> number
     corpus <- tm_map(corpus, 
         content_transformer(function(x) gsub("\\b\\d+\\b", "number", x)))
@@ -33,8 +35,7 @@ scrub_data <- function(doc_vector) {
 #----------------------------------------------------------------------------
 data_set$query         <- scrub_data(data_set$query)
 data_set$product_title <- scrub_data(data_set$product_title)
-# Drop description, has for now too much and too dirty data
-data_set$product_description <- NULL
+data_set$product_description <- scrub_data(data_set$product_description)
 
 #----------------------------------------------------------------------------
 write_csv(data_set, out_name)
