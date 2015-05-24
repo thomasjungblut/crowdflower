@@ -138,11 +138,13 @@ if __name__ == '__main__':
 	#testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
 
 	tfv = TfidfVectorizer(
-			min_df=2,
+			min_df = 2, max_df = 1.0,
 			max_features=None, 
-			strip_accents='unicode', analyzer='word', token_pattern=r'\w{1,}',
+			strip_accents='unicode', analyzer='char', 
+			token_pattern=r'\w{1,}',
 			tokenizer = LemmaTokenizer(),
-			ngram_range=(1, 3), use_idf=1, smooth_idf=1, sublinear_tf=0,
+			norm = None,
+			ngram_range=(1, 6), use_idf=1, smooth_idf=1, sublinear_tf=0,
 			stop_words = 'english')
 
 	# Fit TFIDF
@@ -164,15 +166,15 @@ if __name__ == '__main__':
 							 ('clf', clf)])
 
 	# Create a parameter grid to search for best parameters for everything in the pipeline
-	param_grid = {'svd__n_components' : [400],
+	param_grid = {'svd__n_components' : [250],
 				  #'clf__gamma' : [0.001],
-				  'clf__C' : [15],
+				  'clf__C' : [9],
     			 }
 
 	# Kappa Scorer 
 	kappa_scorer = metrics.make_scorer(quadratic_weighted_kappa, greater_is_better = True)
 
-	cv = StratifiedShuffleSplit(y, n_iter=10, test_size=0.2)
+	cv = StratifiedShuffleSplit(y, n_iter=10, test_size=0.1)
 	# Initialize Grid Search Model
 	model = grid_search.GridSearchCV(estimator = clf, param_grid=param_grid, scoring=kappa_scorer,
 									 verbose=10, n_jobs=10, cv=cv, iid=True, refit=True)
