@@ -3,6 +3,11 @@ require(tm)
 require(stringr)
 
 #-------------------------------------------------------------------------
+count_words <- function(words) {
+    return(vapply(words, length, FUN.VALUE=1))
+}
+
+#-------------------------------------------------------------------------
 
 if (1) {
     args <- commandArgs(trailingOnly=TRUE)
@@ -14,10 +19,6 @@ if (1) {
     out_name <- "../Processed/train_features.csv"
 }
 data_set <- read_csv(in_name)
-
-count_words <- function(words) {
-    return(vapply(words, length, FUN.VALUE=1))
-}
 
 query_words <- str_split(data_set$query, "\\s+")
 title_words <- str_split(data_set$product_title, "\\s+")
@@ -43,7 +44,7 @@ write_csv(feature_set, out_name)
 
 
 
-
+#==============================================================================
 if (0) {
 corpus <- VCorpus(VectorSource(data_set$query))
 # write_csv(data_set, out_name")

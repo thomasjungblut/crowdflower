@@ -13,16 +13,27 @@ data_set <- read_csv(in_name)
 
 scrub_data <- function(doc_vector) {
     print("Scrub")
-    corpus <- VCorpus(VectorSource(doc_vector))
-    # Don't care for punctuation
-    corpus <- tm_map(corpus, removePunctuation)
-    # Everything in lower case
-    corpus <- tm_map(corpus, content_transformer(tolower))
-    # No unicode or other funny characters...
-    corpus <- tm_map(corpus, content_transformer(function(x) gsub("[^[:alnum:]]", " ", x)))
-    # 12382 -> number
-    corpus <- tm_map(corpus, 
-        content_transformer(function(x) gsub("\\b\\d+\\b", "number", x)))
+    gg <- gsub("\\s", " ", doc_vector)
+    gg <- tolower(gg)
+    # This takes care of most of the CSS
+    gg <- gsub("\\.[a-z]+\\s", " ", gg)
+    gg <- gsub("\\b[a-z]+\\.[a-z]+\\b", " ", gg)
+    gg <- gsub("\\b[a-z-]+:[^;]+;", " ", gg)
+    gg <- gsub("\\b(li|ul|hr|h1|h2|h3|h4|h5|body|p|div|table)\\b", " ", gg)
+    gg <- gsub(":", " ", gg)
+    gg <- gsub("\\.", " ", gg)
+    # This takes care of most of the HTML
+    gg <- gsub("<[a-z]+>", "", gg)
+    gg <- gsub("</[a-z]+>", "", gg)
+    # Remove all unicode and other nonsense
+    gg <- gsub("[^a-z 0-9-]", "#", gg)
+    # Remove any words that dare to have funny characters...
+    gg <- gsub("\\S*#\\S*", "", gg)
+    #    gg <- gsub("\\s+", " ", gg)
+    # Replace numbers with the word number
+    gg <- gsub("\\b\\d+\\b", "number", gg)
+
+    corpus <- VCorpus(VectorSource(gg))
     # High freq. words such as "a", "the", etc removed
     corpus <- tm_map(corpus, removeWords, stopwords("english"))
     # Sandals -> Sandal,  memory -> memori
