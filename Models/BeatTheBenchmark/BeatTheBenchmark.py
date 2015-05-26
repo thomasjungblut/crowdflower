@@ -8,10 +8,16 @@ __author__ : Abhishek
 
 import pandas as pd
 import numpy as np
+from scipy import sparse
+from scipy.stats import randint as sp_randint
 from sklearn.linear_model import LogisticRegression
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.svm import SVC
-from sklearn.cross_validation import StratifiedShuffleSplit
+from sklearn.svm import SVR
+from sklearn.svm import NuSVC
+from sklearn.base import BaseEstimator
+from sklearn.cross_validation import StratifiedKFold
+from sklearn.grid_search import RandomizedSearchCV
 from sklearn.decomposition import TruncatedSVD
 from sklearn.preprocessing import StandardScaler
 from sklearn import decomposition, pipeline, metrics, grid_search
@@ -28,8 +34,47 @@ class LemmaTokenizer(object):
 		self.wnl = WordNetLemmatizer()
 		self.stm = PorterStemmer()
 	def __call__(self, doc):
+		#return word_tokenize(doc)
 		return [self.wnl.lemmatize(t) for t in word_tokenize(doc)]
 		#return [self.stm.stem(t) for t in word_tokenize(doc)]
+		
+class FeatureStacker(BaseEstimator):
+    """Stacks several transformer objects to yield concatenated features.
+    Similar to pipeline, a list of tuples ``(name, estimator)`` is passed
+    to the constructor.
+    """
+    def __init__(self, transformer_list):
+        self.transformer_list = transformer_list
+
+    def get_feature_names(self):
+        pass
+
+    def fit(self, X, y=None):
+        for name, trans in self.transformer_list:
+            trans.fit(X, y)
+        return self
+
+    def transform(self, X):
+        features = []
+        for name, trans in self.transformer_list:
+            features.append(trans.transform(X))
+        issparse = [sparse.issparse(f) for f in features]
+        if np.any(issparse):
+            features = sparse.hstack(features).tocsr()
+        else:
+            features = np.hstack(features)
+        return features
+
+    def get_params(self, deep=True):
+        if not deep:
+            return super(FeatureStacker, self).get_params(deep=False)
+        else:
+            out = dict(self.transformer_list)
+            for name, trans in self.transformer_list:
+                for key, value in trans.get_params(deep=True).items():
+                    out['%s__%s' % (name, key)] = value
+            return out
+		
 
 # The following 3 functions have been taken from Ben Hamner's github repository
 # https://github.com/benhamner/Metrics
@@ -115,11 +160,58 @@ def quadratic_weighted_kappa(y, y_pred):
 
     return (1.0 - numerator / denominator)
 
+def frange(x, y, jump):
+	while x < y:
+		yield x
+		x += jump
+	
+def build_stacked_model():
+    #select = SelectPercentile(score_func=chi2, percentile=16)
+
+	countvect_char = TfidfVectorizer(
+		#min_df=7,
+		#ngram_range=(1, 6),
+		tokenizer = LemmaTokenizer(),
+		analyzer="char_wb", binary=False, 
+		norm = None,
+		stop_words = 'english')
+
+	countvect_word = TfidfVectorizer(
+		ngram_range=(1, 3),
+		tokenizer = LemmaTokenizer(),
+		token_pattern=r'\w{1,}',
+		analyzer="word", binary=False, 
+		norm = None,
+		min_df=2,
+		stop_words = 'english')
+
+	svd = TruncatedSVD()
+	scl = StandardScaler()
+	clf = SVC()
+
+	# TODO instead of stacking, train a different classifier?
+	#ft = FeatureStacker([
+	#	("chars", countvect_char),
+	#	("words", countvect_word)])
+	
+	p = pipeline.Pipeline([
+		('vect', countvect_char),
+		('svd', svd),
+		('scl', scl),
+		('clf', clf)])
+		
+	return p
+	
+	
 if __name__ == '__main__':    
 
 	# Load the training file
 	train = pd.read_csv('../../Raw/train.csv')
 	test = pd.read_csv('../../Raw/test.csv')
+	
+	# the scrubbed set gives consistently worse results
+	#train = pd.read_csv('../../Processed/train_scrubbed.csv')
+	#test = pd.read_csv('../../Processed/test_scrubbed.csv')
 
 	# we dont need ID columns
 	idx = test.id.values.astype(int)
@@ -137,50 +229,32 @@ if __name__ == '__main__':
 	#traindata = list(train.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
 	#testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
 
-	tfv = TfidfVectorizer(
-			min_df = 2, max_df = 1.0,
-			max_features=None, 
-			strip_accents='unicode', analyzer='char', 
-			token_pattern=r'\w{1,}',
-			tokenizer = LemmaTokenizer(),
-			norm = None,
-			ngram_range=(1, 6), use_idf=1, smooth_idf=1, sublinear_tf=0,
-			stop_words = 'english')
-
-	# Fit TFIDF
-	tfv.fit(traindata)
-	X =  tfv.transform(traindata) 
-	X_test = tfv.transform(testdata)
-
-	# Initialize SVD
-	svd = TruncatedSVD()
-
-	# Initialize the standard scaler 
-	scl = StandardScaler()
-
-	clf = SVC()	# TODO this needs a neural network...
-
 	# Create the pipeline 
-	clf = pipeline.Pipeline([('svd', svd),
-							 ('scl', scl),
-							 ('clf', clf)])
+	clf = build_stacked_model()
 
 	# Create a parameter grid to search for best parameters for everything in the pipeline
-	param_grid = {'svd__n_components' : [250],
-				  #'clf__gamma' : [0.001],
-				  'clf__C' : [9],
+	param_grid = {	
+				  'vect__ngram_range' : [(1, 4), (1, 5), (1, 6), (1, 7)],
+				  'vect__min_df' : list(range(1, 20, 1)),
+				  'svd__n_components' : list(range(100, 700, 20)),
+				  'clf__degree' : list(range(2, 8, 1)),
+				  'clf__C' : list(range(5, 10, 1)),
+				  #'clf__C' : [8],
+				  #'clf__degree' : [4],
+				  #'svd__n_components' : [180],
     			 }
 
 	# Kappa Scorer 
 	kappa_scorer = metrics.make_scorer(quadratic_weighted_kappa, greater_is_better = True)
 
-	cv = StratifiedShuffleSplit(y, n_iter=10, test_size=0.1)
+	cv = StratifiedKFold(y, n_folds = 3, shuffle = True, random_state = 42)
+	
 	# Initialize Grid Search Model
-	model = grid_search.GridSearchCV(estimator = clf, param_grid=param_grid, scoring=kappa_scorer,
+	model = grid_search.RandomizedSearchCV(n_iter = 3000, estimator = clf, param_distributions=param_grid, scoring=kappa_scorer,
 									 verbose=10, n_jobs=10, cv=cv, iid=True, refit=True)
 									 
 	# Fit Grid Search Model
-	model.fit(X, y)
+	model.fit(traindata, y)
 	print("Best score: %0.3f" % model.best_score_)
 	print("Best parameters set:")
 	best_parameters = model.best_estimator_.get_params()
@@ -193,8 +267,8 @@ if __name__ == '__main__':
 
 	#exit()
 	# Fit model with best parameters optimized for quadratic_weighted_kappa
-	best_model.fit(X,y)
-	preds = best_model.predict(X_test)
+	best_model.fit(traindata, y)
+	preds = best_model.predict(testdata)
 
 	print("writing")
 	# Create your first submission file
