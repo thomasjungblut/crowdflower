@@ -22,7 +22,7 @@ close(fileConn)
 ### Run GDBuilder C# Code ###
 
 #Load the dictionary
-dict <- as.data.frame(read_csv("dict.csv"))
+dict <- as.data.frame(read_csv("sample_dict.csv"))
 #Apply minimum count to reduce the size quite a bit
 MIN_COUNT = 20
 dict <- dict[dict$co >= MIN_COUNT, ]
@@ -148,13 +148,6 @@ PhraseDistance(dict, "console game", "nintendo wii", length(A))
 PhraseDistance(dict, "boyfriend jean", "how make american quilt (dvd)", length(A))
 PhraseDistance(dict, "boyfriend jean", "levi", length(A))
 PhraseDistance(dict, "boyfriend jean", "zipper levi style", length(A))
-
-
-plot(distances[1:nrow(train)], train$median_relevance)
-
-fileConn <- file("train_dist_q2t.txt")
-writeLines(as.character(dist_q2t), fileConn)
-close(fileConn)
 
 
 
