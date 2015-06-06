@@ -44,10 +44,10 @@ scrub_data <- function(doc_vector) {
         # corpus <- tm_map(corpus, stripWhitespace)
         gg <- vapply(corpus, as.character, FUN.VALUE="", USE.NAMES=FALSE)
     }
-    # Remove possible space at the begin of a sentence.
-    gg <- gsub("^\\s", "", gg)
     gg <- gsub("-", "", gg)
     gg <- gsub("\\s+", " ", gg)
+    # Remove possible space at the begin of a sentence.
+    gg <- gsub("^\\s", "", gg)
 
     return(gg)
 }
