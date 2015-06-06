@@ -27,16 +27,18 @@ from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.ensemble import RandomForestClassifier
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
-from nltk.stem.porter import *
+from nltk.stem.porter import PorterStemmer
 
 class LemmaTokenizer(object):
+
     def __init__(self):
         self.wnl = WordNetLemmatizer()
         self.stm = PorterStemmer()
+
     def __call__(self, doc):
-        #return word_tokenize(doc)
+        # Stem each word in the given document and return this
+        # as a list of words.
         return [self.wnl.lemmatize(t) for t in word_tokenize(doc)]
-        #return [self.stm.stem(t) for t in word_tokenize(doc)]
 
 
 class FeatureStacker(BaseEstimator):
@@ -160,19 +162,12 @@ def quadratic_weighted_kappa(y, y_pred):
 
     return (1.0 - numerator / denominator)
 
-def frange(x, y, jump):
-    while x < y:
-        yield x
-        x += jump
 
 def build_stacked_model():
-    #select = SelectPercentile(score_func=chi2, percentile=16)
-
     countvect_char = TfidfVectorizer(
-            #min_df=7,
-            #ngram_range=(1, 6),
             tokenizer = LemmaTokenizer(),
-            analyzer="char_wb", binary=False, 
+            analyzer="char_wb", 
+            binary=False, 
             norm = None,
             stop_words = 'english')
 
@@ -180,7 +175,8 @@ def build_stacked_model():
             ngram_range=(1, 3),
             tokenizer = LemmaTokenizer(),
             token_pattern=r'\w{1,}',
-            analyzer="word", binary=False, 
+            analyzer="word", 
+            binary=False, 
             norm = None,
             min_df=2,
             stop_words = 'english')
@@ -189,16 +185,12 @@ def build_stacked_model():
     scl = StandardScaler()
     clf = SVC()
 
-    # TODO instead of stacking, train a different classifier?
-    #ft = FeatureStacker([
-    #	("chars", countvect_char),
-    #	("words", countvect_word)])
-
     p = pipeline.Pipeline([
         ('vect', countvect_char),
         ('svd', svd),
         ('scl', scl),
-        ('clf', clf)])
+        ('clf', clf)]
+    )
 
     return p
 
@@ -206,27 +198,29 @@ def build_stacked_model():
 if __name__ == '__main__':    
 
     # Load the training file
-        train = pd.read_csv('../../Raw/train.csv')
-        test = pd.read_csv('../../Raw/test.csv')
+        #train = pd.read_csv('../../Raw/train.csv')
+        #test = pd.read_csv('../../Raw/test.csv')
 
         # the scrubbed set gives consistently worse results
-        #train = pd.read_csv('../../Processed/train_scrubbed.csv')
-        #test = pd.read_csv('../../Processed/test_scrubbed.csv')
+        train = pd.read_csv('../../Processed/train_scrubbed.csv')
+        test = pd.read_csv('../../Processed/test_scrubbed.csv')
 
         # Make of copy of the query ids so we
         # can build a submission later on.
         idx = test.id.values.astype(int)
         # we dont need ID columns
         train = train.drop('id', axis=1)
-        test = test.drop('id', axis=1)
+        test  = test.drop('id', axis=1)
 
         # create labels. drop useless columns
         y = train.median_relevance.values
         train = train.drop(['median_relevance', 'relevance_variance'], axis=1)
 
         # do some lambda magic on text columns
-        traindata = list(train.apply(lambda x:'%s %s' % (x['query'],x['product_title']),axis=1))
-        testdata = list(test.apply(lambda x:'%s %s' % (x['query'],x['product_title']),axis=1))
+        traindata = list(train.apply(lambda x:'%s %s' % 
+            (x['query'],x['product_title']),axis=1))
+        testdata = list(test.apply(lambda x:'%s %s' % 
+            (x['query'],x['product_title']),axis=1))
 
         #traindata = list(train.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
         #testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
@@ -236,27 +230,32 @@ if __name__ == '__main__':
 
         # Create a parameter grid to search for best parameters for everything in the pipeline
         param_grid = {
-                'vect__ngram_range' : [(1, 4), (1, 5), (1, 6), (1, 7)],
-                'vect__min_df' : list(range(1, 20, 1)),
-                'svd__n_components' : list(range(100, 700, 20)),
-                'clf__degree' : list(range(2, 8, 1)),
-                'clf__C' : list(range(5, 10, 1)),
-                #'clf__C' : [8],
-                #'clf__degree' : [4],
-                #'svd__n_components' : [180],
+                'vect__ngram_range' : [(1, 5)],
+                'vect__min_df' : [6], # list(range(1, 20, 10)),
+                'svd__n_components' : [220], # list(range(100, 700, 500)),
+                'clf__degree' :[4], # list(range(2, 8, 4)),
+                'clf__C' : [6], # list(range(5, 10, 5)),
                 }
 
         # Kappa Scorer 
         kappa_scorer = metrics.make_scorer(
                 quadratic_weighted_kappa, greater_is_better = True)
 
-        cv = StratifiedKFold(y, n_folds = 3, shuffle = True, random_state = 42)
+        # Cross validation
+        cv = StratifiedKFold(y, n_folds = 2, shuffle = True, random_state = 42)
 
         # Initialize Grid Search Model
+        # Try many different parameters to find the best fitting model
         model = grid_search.RandomizedSearchCV(
-                n_iter = 3000, estimator = clf, 
-                param_distributions=param_grid, scoring=kappa_scorer,
-                verbose=10, n_jobs=1, cv=cv, iid=True, refit=True)
+                n_iter = 1,  # number of setting to try
+                estimator = clf,  # Pipeline
+                param_distributions=param_grid,
+                scoring=kappa_scorer,
+                verbose=10,
+                n_jobs=1,  # Number of jobs to run in parallel
+                cv=cv,
+                iid=True,
+                refit=True)
 
         # Fit Grid Search Model
         model.fit(traindata, y)
