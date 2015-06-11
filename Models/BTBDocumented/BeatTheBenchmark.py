@@ -198,85 +198,87 @@ def build_stacked_model():
 if __name__ == '__main__':    
 
     # Load the training file
-        #train = pd.read_csv('../../Raw/train.csv')
-        #test = pd.read_csv('../../Raw/test.csv')
-
-        # the scrubbed set gives consistently worse results
+    print("Loading data.")
+    if 1:
+        train = pd.read_csv('../../Raw/train.csv')
+        test = pd.read_csv('../../Raw/test.csv')
+    else:
         train = pd.read_csv('../../Processed/train_scrubbed.csv')
         test = pd.read_csv('../../Processed/test_scrubbed.csv')
 
-        # Make of copy of the query ids so we
-        # can build a submission later on.
-        idx = test.id.values.astype(int)
-        # we dont need ID columns
-        train = train.drop('id', axis=1)
-        test  = test.drop('id', axis=1)
+    print("Preprocessing")
+    # Make of copy of the query ids so we
+    # can build a submission later on.
+    idx = test.id.values.astype(int)
+    # we dont need ID columns
+    train = train.drop('id', axis=1)
+    test  = test.drop('id', axis=1)
 
-        # create labels. drop useless columns
-        y = train.median_relevance.values
-        train = train.drop(['median_relevance', 'relevance_variance'], axis=1)
+    # create labels. drop useless columns
+    y = train.median_relevance.values
+    train = train.drop(['median_relevance', 'relevance_variance'], axis=1)
 
-        # do some lambda magic on text columns
-        traindata = list(train.apply(lambda x:'%s %s' % 
-            (x['query'],x['product_title']),axis=1))
-        testdata = list(test.apply(lambda x:'%s %s' % 
-            (x['query'],x['product_title']),axis=1))
+    # do some lambda magic on text columns
+    traindata = list(train.apply(lambda x:'%s %s' % 
+        (x['query'],x['product_title']),axis=1))
+    testdata = list(test.apply(lambda x:'%s %s' % 
+        (x['query'],x['product_title']),axis=1))
 
-        #traindata = list(train.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
-        #testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
+    #traindata = list(train.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
+    #testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
 
-        # Create the pipeline 
-        clf = build_stacked_model()
+    # Create the pipeline 
+    clf = build_stacked_model()
 
-        # Create a parameter grid to search for best parameters for everything in the pipeline
-        param_grid = {
-                'vect__ngram_range' : [(1, 5)],
-                'vect__min_df' : [6], # list(range(1, 20, 10)),
-                'svd__n_components' : [220], # list(range(100, 700, 500)),
-                'clf__degree' :[4], # list(range(2, 8, 4)),
-                'clf__C' : [6], # list(range(5, 10, 5)),
-                }
+    # Create a parameter grid to search for 
+    # best parameters for everything in the pipeline
+    param_grid = {
+            'vect__ngram_range' : [(1, 5)],
+            'vect__min_df' : [6], # list(range(1, 20, 10)),
+            'svd__n_components' : [220], # list(range(100, 700, 500)),
+            'clf__degree' :[4], # list(range(2, 8, 4)),
+            'clf__C' : [6], # list(range(5, 10, 5)),
+            }
 
-        # Kappa Scorer 
-        kappa_scorer = metrics.make_scorer(
-                quadratic_weighted_kappa, greater_is_better = True)
+    # Kappa Scorer 
+    kappa_scorer = metrics.make_scorer(
+            quadratic_weighted_kappa, greater_is_better = True)
 
-        # Cross validation
-        cv = StratifiedKFold(y, n_folds = 2, shuffle = True, random_state = 42)
+    # Cross validation
+    cv = StratifiedKFold(y, n_folds=2, 
+            shuffle=True, random_state=42)
 
-        # Initialize Grid Search Model
-        # Try many different parameters to find the best fitting model
-        model = grid_search.RandomizedSearchCV(
-                n_iter = 1,  # number of setting to try
-                estimator = clf,  # Pipeline
-                param_distributions=param_grid,
-                scoring=kappa_scorer,
-                verbose=10,
-                n_jobs=1,  # Number of jobs to run in parallel
-                cv=cv,
-                iid=True,
-                refit=True)
+    # Initialize Grid Search Model
+    # Try many different parameters to find the best fitting model
+    model = grid_search.RandomizedSearchCV(
+            n_iter=1,  # number of setting to try
+            estimator=clf,  # Pipeline
+            param_distributions=param_grid,
+            scoring=kappa_scorer,
+            verbose=10,
+            n_jobs=1,  # Number of jobs to run in parallel
+            cv=cv,
+            iid=True,
+            refit=True)
 
-        # Fit Grid Search Model
-        model.fit(traindata, y)
-        print("Best score: %0.3f" % model.best_score_)
-        print("Best parameters set:")
-        best_parameters = model.best_estimator_.get_params()
-        for param_name in sorted(param_grid.keys()):
-            print("\t%s: %r" % (param_name, best_parameters[param_name]))
+    # Fit Grid Search Model
+    model.fit(traindata, y)
+    print("Best score: %0.3f" % model.best_score_)
+    print("Best parameters set:")
+    best_parameters = model.best_estimator_.get_params()
+    for param_name in sorted(param_grid.keys()):
+        print("\t%s: %r" % (param_name, best_parameters[param_name]))
 
-        # Get best model
-        print("fitting")
-        best_model = model.best_estimator_
+    # Get best model
+    print("Fitting testdata.")
+    best_model = model.best_estimator_
+    # Fit model with best parameters optimized for quadratic_weighted_kappa
+    best_model.fit(traindata, y)
+    preds = best_model.predict(testdata)
 
-        #exit()
-        # Fit model with best parameters optimized for quadratic_weighted_kappa
-        best_model.fit(traindata, y)
-        preds = best_model.predict(testdata)
-
-        print("writing")
-        # Create your first submission file
-        submission = pd.DataFrame({"id": idx, "prediction": preds})
-        submission.to_csv("Submission/sub.csv", index=False)
-        print("done")
+    print("Creating submission")
+    # Create your first submission file
+    submission = pd.DataFrame({"id": idx, "prediction": preds})
+    submission.to_csv("Submission/sub.csv", index=False)
+    print("done")
 
