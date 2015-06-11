@@ -234,8 +234,8 @@ if __name__ == '__main__':
     # best parameters for everything in the pipeline
     param_grid = {
             'vect__ngram_range' : [(1, 5)],
-            'vect__min_df' : [6], # list(range(1, 20, 10)),
-            'svd__n_components' : [220], # list(range(100, 700, 500)),
+            'vect__min_df' : list(range(5, 10, 1)), #[6]
+            'svd__n_components' : list(range(150, 250, 5)),  #220
             'clf__degree' :[4], # list(range(2, 8, 4)),
             'clf__C' : [6], # list(range(5, 10, 5)),
             }
@@ -245,13 +245,13 @@ if __name__ == '__main__':
             quadratic_weighted_kappa, greater_is_better = True)
 
     # Cross validation
-    cv = StratifiedKFold(y, n_folds=2, 
+    cv = StratifiedKFold(y, n_folds=3, 
             shuffle=True, random_state=42)
 
     # Initialize Grid Search Model
     # Try many different parameters to find the best fitting model
     model = grid_search.RandomizedSearchCV(
-            n_iter=1,  # number of setting to try
+            n_iter=40,  # number of setting to try
             estimator=clf,  # Pipeline
             param_distributions=param_grid,
             scoring=kappa_scorer,
