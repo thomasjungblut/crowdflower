@@ -144,7 +144,7 @@ def build_stacked_model():
 if __name__ == '__main__':
     # Load the training file
     print("Loading data.")
-    if 1:
+    if 0:
         train = pd.read_csv('../../Raw/train.csv')
         test  = pd.read_csv('../../Raw/test.csv')
     else:
@@ -180,9 +180,9 @@ if __name__ == '__main__':
     # best parameters for everything in the pipeline
     param_grid = {
             'vect__ngram_range' : [(1, 5)],
-            'vect__min_df' : list(range(5, 10, 1)), #[6]
+            'vect__min_df' : list(range(3, 10, 1)), #[6]
             'svd__n_components' : list(range(150, 250, 5)),  #220
-            'clf__degree' :[4], # list(range(2, 8, 4)),
+            'clf__degree' : list(range(2, 8, 1)),  #4
             'clf__C' : [6], # list(range(5, 10, 5)),
             }
 
@@ -191,7 +191,7 @@ if __name__ == '__main__':
             quadratic_weighted_kappa, greater_is_better = True)
 
     # Cross validation
-    cv = StratifiedKFold(y, n_folds=2, shuffle=True, random_state=42)
+    cv = StratifiedKFold(y, n_folds=3, shuffle=True, random_state=42)
 
     # Initialize Grid Search Model
     # Try many different parameters to find the best fitting model
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     # Fit Grid Search Model
     print("Fitting training data .")
     model.fit(traindata, y)
-    exit(0)
+
     print("Best score: %0.3f" % model.best_score_)
     print("Best parameters set:")
     best_parameters = model.best_estimator_.get_params()
