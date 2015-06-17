@@ -54,10 +54,21 @@ public class CreateFeatures {
     int longestSuffix = processLongestSuffix(query, title).length();
     list.add(longestSuffix);
 
-    list.add(longestPrefix / (double) query.length());
-    list.add(longestSuffix / (double) query.length());
-    list.add(longestPrefix / (double) title.length());
-    list.add(longestSuffix / (double) title.length());
+    if (query.length() == 0) {
+      list.add(0);
+      list.add(0);
+    } else {
+      list.add(longestPrefix / (double) query.length());
+      list.add(longestSuffix / (double) query.length());
+    }
+
+    if (title.length() == 0) {
+      list.add(0);
+      list.add(0);
+    } else {
+      list.add(longestPrefix / (double) title.length());
+      list.add(longestSuffix / (double) title.length());
+    }
 
     int titleDigit = countDigit(title);
     int queryDigit = countDigit(query);

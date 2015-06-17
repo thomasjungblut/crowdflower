@@ -1,8 +1,8 @@
-#LB SCORE = ???
+#LB SCORE = 0.40
 
 # 10 fold CV
 # QWK        QWK SD    
-# 0.42         0.26
+# 0.42         0.020
 source("QWK.R")
 require(caret)
 require(Metrics)
