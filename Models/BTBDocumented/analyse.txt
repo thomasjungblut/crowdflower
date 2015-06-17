@@ -1,0 +1,13 @@
+
+
+
+Best score: 0.636
+Best parameters set:
+        clf__C: 9
+        clf__degree: 5
+        svd__n_components: 240
+        vect__min_df: 3
+        vect__ngram_range: (1, 6)
+Creating submission
+done
+
