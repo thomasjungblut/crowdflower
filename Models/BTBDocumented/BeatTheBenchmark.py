@@ -186,13 +186,22 @@ if __name__ == '__main__':
 
     # Create a parameter grid to search for 
     # best parameters for everything in the pipeline
-    param_grid = {
-            'vect__ngram_range' : [(2,7), (1, 6), (2,6), (3,6), (2,5) ],
-            'vect__min_df' : list(range(3, 12, 1)), #[6]
-            'svd__n_components' : list(range(100, 350, 5)),  #220
-            'clf__degree' : list(range(1, 10, 1)),  #4
-            'clf__C' : list(range(5, 10, 1)),
-    }
+    if False:
+        param_grid = {
+                'vect__ngram_range' : [(2,7), (1, 6), (2,6), (3,6), (2,5) ],
+                'vect__min_df' : list(range(3, 12, 1)), #[6]
+                'svd__n_components' : list(range(100, 350, 5)),  #220
+                'clf__degree' : list(range(1, 10, 1)),  #4
+                'clf__C' : list(range(5, 10, 1)),
+        }
+    else:
+        param_grid = {
+                'vect__ngram_range' : [(1, 6)],
+                'vect__min_df' :  [3],
+                'svd__n_components' : [240],
+                'clf__degree' : [5],
+                'clf__C' : [9]
+        }
 
     # Kappa Scorer 
     kappa_scorer = metrics.make_scorer(
@@ -204,7 +213,7 @@ if __name__ == '__main__':
     # Initialize Grid Search Model
     # Try many different parameters to find the best fitting model
     model = grid_search.RandomizedSearchCV(
-            n_iter=200,  # number of setting to try
+            n_iter=1,  # number of setting to try
             estimator=clf,  # Pipeline
             param_distributions=param_grid,
             scoring=kappa_scorer,

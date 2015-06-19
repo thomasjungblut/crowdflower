@@ -30,25 +30,8 @@ scrub_data <- function(doc_vector) {
     }
     # Remove all unicode and other nonsense
     gg <- gsub("[^a-z 0-9-]", "#", gg)
-    if (0) {
-        # Remove any words that dare to have funny characters...
-        gg <- gsub("\\S*#\\S*", "", gg)
-        # Replace numbers with the word number
-        #gg <- gsub("\\b\\d+\\b", "number", gg)
-        if (0) {
-            # All this is done in the pipeline of the model.
-            corpus <- VCorpus(VectorSource(gg))
-            # High freq. words such as "a", "the", etc removed
-            corpus <- tm_map(corpus, removeWords, stopwords("english"))
-            # Sandals -> Sandal,  memory -> memori
-            corpus <- tm_map(corpus, stemDocument)
-            # Remove unnecessary spacing
-            # corpus <- tm_map(corpus, stripWhitespace)
-            gg <- vapply(corpus, as.character, FUN.VALUE="", USE.NAMES=FALSE)
-        }
-        gg <- gsub("-", "", gg)
-    }
-    gg <- gsub("#", "-", gg)
+    #gg <- gsub("-", " ", gg)
+    gg <- gsub("#", "", gg)
     gg <- gsub("\\s+", " ", gg)
     # Remove possible space at the begin of a sentence.
     gg <- gsub("^\\s", "", gg)

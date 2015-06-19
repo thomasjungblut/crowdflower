@@ -1,7 +1,7 @@
 
 
 
-Best score: 0.636
+Best score: 0.636     (On kaggle 0.62497)
 Best parameters set:
         clf__C: 9
         clf__degree: 5
