@@ -140,11 +140,21 @@ def build_stacked_model():
 
     return p
 
+def combine_factors(x):
+    z = x['product_description']
+    if pd.isnull(z):
+        z = ""
+    else:
+        z = z[:80]
+    #s = "{} {} {}".format(x['query'], x['product_title'], z)
+    s = "{} {}".format(x['query'], x['product_title'])
+    return s
+
 
 if __name__ == '__main__':
     # Load the training file
     print("Loading data.")
-    if 0:
+    if 1:
         train = pd.read_csv('../../Raw/train.csv')
         test  = pd.read_csv('../../Raw/test.csv')
     else:
@@ -165,10 +175,8 @@ if __name__ == '__main__':
 
     # do some lambda magic on text columns
     # Combine query and product_title into one string
-    traindata = list(train.apply(lambda x:'%s %s' % 
-        (x['query'],x['product_title']),axis=1))
-    testdata = list(test.apply(lambda x:'%s %s' % 
-        (x['query'],x['product_title']),axis=1))
+    traindata = list(train.apply(combine_factors, axis=1))
+    testdata =  list(test.apply(combine_factors, axis=1))
 
     #traindata = list(train.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
     #testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
@@ -178,13 +186,22 @@ if __name__ == '__main__':
 
     # Create a parameter grid to search for 
     # best parameters for everything in the pipeline
-    param_grid = {
-            'vect__ngram_range' : [(1, 5)],
-            'vect__min_df' : list(range(3, 10, 1)), #[6]
-            'svd__n_components' : list(range(150, 250, 5)),  #220
-            'clf__degree' : list(range(2, 8, 1)),  #4
-            'clf__C' : [6], # list(range(5, 10, 5)),
-            }
+    if False:
+        param_grid = {
+                'vect__ngram_range' : [(2,7), (1, 6), (2,6), (3,6), (2,5) ],
+                'vect__min_df' : list(range(3, 12, 1)), #[6]
+                'svd__n_components' : list(range(100, 350, 5)),  #220
+                'clf__degree' : list(range(1, 10, 1)),  #4
+                'clf__C' : list(range(5, 10, 1)),
+        }
+    else:
+        param_grid = {
+                'vect__ngram_range' : [(1, 6)],
+                'vect__min_df' :  [3],
+                'svd__n_components' : [240],
+                'clf__degree' : [5],
+                'clf__C' : [9]
+        }
 
     # Kappa Scorer 
     kappa_scorer = metrics.make_scorer(
@@ -196,7 +213,7 @@ if __name__ == '__main__':
     # Initialize Grid Search Model
     # Try many different parameters to find the best fitting model
     model = grid_search.RandomizedSearchCV(
-            n_iter=40,  # number of setting to try
+            n_iter=1,  # number of setting to try
             estimator=clf,  # Pipeline
             param_distributions=param_grid,
             scoring=kappa_scorer,
