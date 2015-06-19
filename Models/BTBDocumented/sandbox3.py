@@ -35,6 +35,10 @@ def combine_factors(x):
 train = pd.read_csv('../../Raw/train.csv')
 test  = pd.read_csv('../../Raw/test.csv')
 
+train_mmr = pd.read_csv('../../Processed/train_minmaxr.csv')
+test_mmr  = pd.read_csv('../../Processed/test_minmaxr.csv')
+
+
 # Make of copy of the query ids so we
 # can build a submission later on.
 idx = test.id.values.astype(int)
@@ -54,7 +58,7 @@ print(y)
 # concat query and product_title
 traindata = list(train.apply(combine_factors,axis=1))
 
-
 print(traindata[1])
 
+print(train_mmr)
 
