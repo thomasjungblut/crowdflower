@@ -1,35 +1,85 @@
-
 """
-Beating the Benchmark 
-Search Results Relevance @ Kaggle
-__author__ : Abhishek
+Based on Beating the Benchmark by Abhishek
 
 """
 
 import pandas as pd
-import numpy as np
-from scipy import sparse
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import SVC
-from sklearn.base import BaseEstimator
-from sklearn.cross_validation import StratifiedKFold
-from sklearn.grid_search import RandomizedSearchCV
-from sklearn.decomposition import TruncatedSVD
-from sklearn.preprocessing import StandardScaler
-from sklearn import decomposition, pipeline, metrics, grid_search
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.stem.porter import PorterStemmer
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn import decomposition, metrics, grid_search
+from sklearn.pipeline import FeatureUnion, Pipeline
+from sklearn.cross_validation import StratifiedKFold
+import numpy as np
+
+#====================================================================
+
+
+# From: http://scikit-learn.org/stable/auto_examples/hetero_feature_union.html
+class ItemSelector(BaseEstimator, TransformerMixin):
+    """For data grouped by feature, select subset of data at a provided key.
+
+    The data is expected to be stored in a 2D data structure, where the first
+    index is over features and the second is over samples.  i.e.
+
+    >> len(data[key]) == n_samples
+
+    Please note that this is the opposite convention to sklearn feature
+    matrixes (where the first index corresponds to sample).
+
+    ItemSelector only requires that the collection implement getitem
+    (data[key]).  Examples include: a dict of lists, 2D numpy array, Pandas
+    DataFrame, numpy record array, etc.
+
+    >> data = {'a': [1, 5, 2, 5, 2, 8],
+               'b': [9, 4, 1, 4, 1, 3]}
+    >> ds = ItemSelector(key='a')
+    >> data['a'] == ds.transform(data)
+
+    ItemSelector is not designed to handle data grouped by sample.  (e.g. a
+    list of dicts).  If your data is structured this way, consider a
+    transformer along the lines of
+    `sklearn.feature_extraction.DictVectorizer`.
+
+    Parameters
+    ----------
+    key : hashable, required
+        The key corresponding to the desired value in a mappable.
+    """
+    def __init__(self, key):
+        self.key = key
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, data_dict):
+        return data_dict[self.key]
 
 class LemmaTokenizer(object):
     def __init__(self):
         self.wnl = WordNetLemmatizer()
         self.stm = PorterStemmer()
-
     def __call__(self, doc):
         # Stem each word in the given document and return this
         # as a list of words.
         return [self.wnl.lemmatize(t) for t in word_tokenize(doc)]
+
+
+class IdentityTransform(BaseEstimator, TransformerMixin):
+    """Extract features from each document for DictVectorizer"""
+
+    def fit(self, x, y=None):
+        return self
+
+    def transform(self, values):
+        # Needs to be a numpy array for later operations like scaling
+        return np.array([[v] for v in values], dtype=float)
+
 
 # The following 3 functions have been taken from Ben Hamner's github repository
 # https://github.com/benhamner/Metrics
@@ -105,7 +155,7 @@ def quadratic_weighted_kappa(y, y_pred):
     hist_rater_a = histogram(rater_a, min_rating, max_rating)
     hist_rater_b = histogram(rater_b, min_rating, max_rating)
 
-    numerator = 0.0
+    numerator   = 0.0
     denominator = 0.0
 
     for i in range(num_ratings):
@@ -118,131 +168,151 @@ def quadratic_weighted_kappa(y, y_pred):
 
     return (1.0 - numerator / denominator)
 
+def combine_factors(x):
+    s = "{} {}".format(x['query'], x['product_title'])
+    return s
 
-def build_stacked_model():
+
+def build_pipe_line():
     countvect_char = TfidfVectorizer(
             tokenizer = LemmaTokenizer(),
             analyzer="char_wb", 
             binary=False, 
             norm = None,
             stop_words = 'english')
-
     svd = TruncatedSVD()
     scl = StandardScaler()
     clf = SVC()
 
-    p = pipeline.Pipeline([
-        ('vect', countvect_char),
-        ('svd', svd),
-        ('scl', scl),
-        ('clf', clf)]
-    )
-
+    p = Pipeline([
+        # Use FeatureUnion to combine the features 
+        # query and title, and rating range
+        ('features', FeatureUnion(
+            transformer_list=[
+                ('cvt', Pipeline([
+                    ('selector', ItemSelector(key='doc')),
+                    ('vect', countvect_char),
+                    ('svd', svd),
+                    ('scl', scl)
+                ])),
+                ('minr', Pipeline([
+                    ('selector', ItemSelector(key='maxr')),
+                    ('transf', IdentityTransform()),
+                    ('scl', scl)
+                ])),
+                ('maxr', Pipeline([
+                    ('selector', ItemSelector(key='maxr')),
+                    ('transf', IdentityTransform()),
+                    ('scl', scl)
+                ])),
+            ],
+            # weight components in FeatureUnion
+            transformer_weights={
+                'doc':  1.0,
+                'minr': 1.0,
+                'maxr': 1.0
+            },
+        )),
+        # Use a SVC classifier on the combined features
+        ('clf', clf),
+    ])
     return p
 
-def combine_factors(x):
-    z = x['product_description']
-    if pd.isnull(z):
-        z = ""
-    else:
-        z = z[:80]
-    #s = "{} {} {}".format(x['query'], x['product_title'], z)
-    s = "{} {}".format(x['query'], x['product_title'])
-    return s
 
 
 if __name__ == '__main__':
-    # Load the training file
-    print("Loading data.")
-    if 1:
-        train = pd.read_csv('../../Raw/train.csv')
-        test  = pd.read_csv('../../Raw/test.csv')
-    else:
-        train = pd.read_csv('../../Processed/train_scrubbed.csv')
-        test  = pd.read_csv('../../Processed/test_scrubbed.csv')
+    train     = pd.read_csv('../../Raw/train.csv')
+    test      = pd.read_csv('../../Raw/test.csv')
+    train_mmr = pd.read_csv('../../Processed/train_minmaxr.csv')
+    test_mmr  = pd.read_csv('../../Processed/test_minmaxr.csv')
 
-    print("Preprocessing")
     # Make of copy of the query ids so we
     # can build a submission later on.
     idx = test.id.values.astype(int)
-    # we dont need ID columns
+    # we dont need ID columns anymore
     train = train.drop('id', axis=1)
-    test  = test.drop('id', axis=1)
+    test  =  test.drop('id', axis=1)
 
-    # create labels. drop useless columns
+    # create labels.
     y = train.median_relevance.values
-    train = train.drop(['median_relevance', 'relevance_variance'], axis=1)
+    # Now we can drop them from the training set
+    # and we can drop the related info too.
+    train = train.drop(['median_relevance', 
+                        'relevance_variance'], axis=1)
 
-    # do some lambda magic on text columns
-    # Combine query and product_title into one string
-    traindata = list(train.apply(combine_factors, axis=1))
-    testdata =  list(test.apply(combine_factors, axis=1))
+    trainX = pd.DataFrame({'doc':list(train.apply(combine_factors,axis=1)),
+                           'minr':train_mmr['minr'],
+                           'maxr':train_mmr['maxr']
+                          })
+    testX = pd.DataFrame({'doc':list(test.apply(combine_factors, axis=1)),
+                          'minr':test_mmr['minr'],
+                          'maxr':test_mmr['maxr']
+                         })
+    clf = build_pipe_line()
 
-    #traindata = list(train.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
-    #testdata = list(test.apply(lambda x:'%s %s %s' % (x['query'],x['product_title'], x['product_description']),axis=1))
+    print("pipeline:", [name for name, _ in clf.steps])
 
-    # Create the pipeline 
-    clf = build_stacked_model()
+    if True:
+        # Create a parameter grid to search for 
+        # best parameters for everything in the pipeline
+        if False:
+            param_grid = {
+                    'vect__ngram_range' : [(2,7), (1, 6), (2,6), (3,6), (2,5) ],
+                    'vect__min_df' : list(range(3, 12, 1)), #[6]
+                    'svd__n_components' : list(range(100, 350, 5)),  #220
+                    'clf__degree' : list(range(1, 10, 1)),  #4
+                    'clf__C' : list(range(5, 10, 1)),
+            }
+        else:
+            param_grid = {
+                    'features__cvt__vect__ngram_range' : [(1, 6)],
+                    'features__cvt__vect__min_df' :  [3],
+                    'features__cvt__svd__n_components' : [240],
+                    'clf__degree' : [5],
+                    'clf__C' : [9]
+            }
 
-    # Create a parameter grid to search for 
-    # best parameters for everything in the pipeline
-    if False:
-        param_grid = {
-                'vect__ngram_range' : [(2,7), (1, 6), (2,6), (3,6), (2,5) ],
-                'vect__min_df' : list(range(3, 12, 1)), #[6]
-                'svd__n_components' : list(range(100, 350, 5)),  #220
-                'clf__degree' : list(range(1, 10, 1)),  #4
-                'clf__C' : list(range(5, 10, 1)),
-        }
-    else:
-        param_grid = {
-                'vect__ngram_range' : [(1, 6)],
-                'vect__min_df' :  [3],
-                'svd__n_components' : [240],
-                'clf__degree' : [5],
-                'clf__C' : [9]
-        }
+        # Kappa Scorer 
+        kappa_scorer = metrics.make_scorer(
+                quadratic_weighted_kappa, greater_is_better = True)
 
-    # Kappa Scorer 
-    kappa_scorer = metrics.make_scorer(
-            quadratic_weighted_kappa, greater_is_better = True)
+        # Cross validation
+        cv = StratifiedKFold(y, n_folds=3, shuffle=True, random_state=42)
 
-    # Cross validation
-    cv = StratifiedKFold(y, n_folds=3, shuffle=True, random_state=42)
+        # Initialize Grid Search Model
+        # Try many different parameters to find the best fitting model
+        model = grid_search.RandomizedSearchCV(
+                n_iter=1,  # number of setting to try
+                estimator=clf,  # Pipeline
+                param_distributions=param_grid,
+                scoring=kappa_scorer,
+                verbose=10,
+                n_jobs=1,  # Number of jobs to run in parallel
+                cv=cv,
+                iid=True,
+                refit=True)
 
-    # Initialize Grid Search Model
-    # Try many different parameters to find the best fitting model
-    model = grid_search.RandomizedSearchCV(
-            n_iter=1,  # number of setting to try
-            estimator=clf,  # Pipeline
-            param_distributions=param_grid,
-            scoring=kappa_scorer,
-            verbose=10,
-            n_jobs=1,  # Number of jobs to run in parallel
-            cv=cv,
-            iid=True,
-            refit=True)
+        # Fit Grid Search Model
+        print("Fitting training data .")
+        model.fit(trainX, y)
 
+        print("Best score: %0.3f" % model.best_score_)
+        print("Best parameters set:")
+        best_parameters = model.best_estimator_.get_params()
+        for param_name in sorted(param_grid.keys()):
+            print("\t%s: %r" % (param_name, best_parameters[param_name]))
 
-    # Fit Grid Search Model
-    print("Fitting training data .")
-    model.fit(traindata, y)
+        # Get best model
+        best_model = model.best_estimator_
+        # Fit model with best parameters optimized for 
+        # quadratic_weighted_kappa
+        best_model.fit(trainX, y)
+        preds = best_model.predict(testX)
 
-    print("Best score: %0.3f" % model.best_score_)
-    print("Best parameters set:")
-    best_parameters = model.best_estimator_.get_params()
-    for param_name in sorted(param_grid.keys()):
-        print("\t%s: %r" % (param_name, best_parameters[param_name]))
+        print("Creating submission")
+        # Create your first submission file
+        submission = pd.DataFrame({"id": idx, "prediction": preds})
+        submission.to_csv("Submission/sub.csv", index=False)
+        print("done")
 
-    # Get best model
-    best_model = model.best_estimator_
-    # Fit model with best parameters optimized for quadratic_weighted_kappa
-    best_model.fit(traindata, y)
-    preds = best_model.predict(testdata)
-
-    print("Creating submission")
-    # Create your first submission file
-    submission = pd.DataFrame({"id": idx, "prediction": preds})
-    submission.to_csv("Submission/sub.csv", index=False)
-    print("done")
 
