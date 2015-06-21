@@ -196,7 +196,7 @@ def build_pipe_line():
                     ('scl', scl)
                 ])),
                 ('minr', Pipeline([
-                    ('selector', ItemSelector(key='maxr')),
+                    ('selector', ItemSelector(key='minr')),
                     ('transf', IdentityTransform()),
                     ('scl', scl)
                 ])),
