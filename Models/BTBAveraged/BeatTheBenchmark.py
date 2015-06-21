@@ -19,6 +19,8 @@ from sklearn.grid_search import RandomizedSearchCV
 from sklearn.decomposition import TruncatedSVD
 from sklearn.preprocessing import StandardScaler
 from sklearn import decomposition, pipeline, metrics, grid_search
+from sklearn.feature_selection import SelectKBest
+from sklearn.pipeline import Pipeline, FeatureUnion
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
 from nltk.stem.porter import PorterStemmer
@@ -33,6 +35,7 @@ class LemmaTokenizer(object):
         # as a list of words.
         return [self.wnl.lemmatize(t) for t in word_tokenize(doc)]
 
+        
 # The following 3 functions have been taken from Ben Hamner's github repository
 # https://github.com/benhamner/Metrics
 def confusion_matrix(rater_a, rater_b, min_rating=None, max_rating=None):
@@ -130,12 +133,15 @@ def build_stacked_model():
             stop_words = 'english')
 
     svd = TruncatedSVD()
-    scl = StandardScaler()
+    
+    combined_features = FeatureUnion([("svd", svd)])
+    
+    scl = StandardScaler(with_mean=False)
     clf = SVC()
 
-    p = pipeline.Pipeline([
+    p = Pipeline([
         ('vect', countvect_char),
-        ('svd', svd),
+        ('union', combined_features),
         ('scl', scl),
         ('clf', clf)]
     )
@@ -151,6 +157,11 @@ def report(grid_scores, n_top=5):
               np.std(score.cv_validation_scores)))
         print("Parameters: {0}".format(score.parameters))
         print("")
+        
+def frange(x, y, jump):
+    while x < y:
+        yield x
+        x += jump        
 
 def grid_search_parameters():
     # Create the pipeline 
@@ -161,7 +172,7 @@ def grid_search_parameters():
     param_grid = {
             'vect__ngram_range' : [(1, 4), (1, 5), (1, 6)],
             'vect__min_df' : list(range(3, 10, 1)),
-            'svd__n_components' : list(range(100, 250, 5)),
+            'union__svd__n_components' : list(range(100, 250, 5)),
             'clf__degree' : list(range(2, 6, 1)),
             'clf__C' : list(range(4, 10, 1)),
             #'clf__C' : [8],
@@ -263,7 +274,7 @@ if __name__ == '__main__':
     testdata = list(test.apply(lambda x:'%s %s' % 
         (x['query'],x['product_title']),axis=1))
 
-    #grid_search_parameters()
+    grid_search_parameters()
     
-    submit(traindata, y, testdata, idx)   
+    #submit(traindata, y, testdata, idx)   
 

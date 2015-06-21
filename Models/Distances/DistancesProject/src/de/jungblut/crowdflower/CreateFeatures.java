@@ -1,6 +1,7 @@
 package de.jungblut.crowdflower;
 
 import gnu.trove.list.array.TDoubleArrayList;
+import gnu.trove.set.hash.TCharHashSet;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -18,6 +19,7 @@ import org.tartarus.snowball.ext.englishStemmer;
 import au.com.bytecode.opencsv.CSVReader;
 
 import com.google.common.collect.HashMultiset;
+import com.google.common.collect.Multiset.Entry;
 
 import de.jungblut.datastructure.ArrayJoiner;
 import de.jungblut.nlp.TokenizerUtils;
@@ -34,17 +36,25 @@ public class CreateFeatures {
   }
 
   private static final String HEADER = "id"
+      + ",queryentropy,titleentropy" //
       + ",btitleinquery,longestprefix,longestsuffix,longestQueryPrefixPerc,longestQuerySuffixPerc,longestTitlePrefixPerc,longestTitleSuffixPerc"
-      + ",numtitledigits,numquerydigits,numdigitdiff,bindigiteq,charjaccardsim"
-      + ",charngcount3,charngjacc3,charngcount4,charngjacc4,charngcount5,charngjacc5,charngcount6,charngjacc6,charngcount7,charngjacc7"
-      + ",wordngcount1,leftngcount1,wordngjacc1" //
-      + ",wordngcount2,leftngcount2,wordngjacc2" //
-      + ",wordngcount3,leftngcount3,wordngjacc3" //
-      + ",wordngcount4,leftngcount4,wordngjacc4" //
-      + ",wordngcount5,leftngcount5,wordngjacc5";
+      + ",numtitledigits,numquerydigits,numdigitdiff,bindigiteq,charjaccardsim,charcossim"
+      + ",charquerycount3,chartitlecount3,charngcount3,charngjacc3,charngcos3" //
+      + ",charquerycount4,chartitlecount4,charngcount4,charngjacc4,charngcos4" //
+      + ",charquerycount5,chartitlecount5,charngcount5,charngjacc5,charngcos5" //
+      + ",charquerycount6,chartitlecount6,charngcount6,charngjacc6,charngcos6"//
+      + ",charquerycount7,chartitlecount7,charngcount7,charngjacc7,charngcos7"//
+      + ",wordquerycount1,wordtitlecount1,wordngcount1,leftngcount1,wordngjacc1,wordngcos1" //
+      + ",wordquerycount2,wordtitlecount2,wordngcount2,leftngcount2,wordngjacc2,wordngcos2" //
+      + ",wordquerycount3,wordtitlecount3,wordngcount3,leftngcount3,wordngjacc3,wordngcos3" //
+      + ",wordquerycount4,wordtitlecount4,wordngcount4,leftngcount4,wordngjacc4,wordngcos4" //
+      + ",wordquerycount5,wordtitlecount5,wordngcount5,leftngcount5,wordngjacc5,wordngcos5";
 
   private static double[] computeFeatures(String query, String title) {
-    TDoubleArrayList list = new TDoubleArrayList(25);
+    TDoubleArrayList list = new TDoubleArrayList(70);
+
+    list.add(entropy(query));
+    list.add(entropy(title));
 
     list.add(title.contains(query) ? 1 : 0);
 
@@ -78,30 +88,57 @@ public class CreateFeatures {
     list.add(titleDigit == queryDigit ? 1 : 0);
 
     list.add(measureJaccardSimilarity(query.toCharArray(), title.toCharArray()));
+    list.add(measureCosineSimilarity(query.toCharArray(), title.toCharArray()));
 
     // char ngrams
     for (int i = 3; i < 8; i++) {
       String[] queryQGram = TokenizerUtils.qGramTokenize(query, i);
+      list.add(queryQGram.length);
       String[] titleQGram = TokenizerUtils.qGramTokenize(title, i);
+      list.add(titleQGram.length);
       int match = countMatches(queryQGram, titleQGram);
       list.add(match);
       double jacc = measureJaccardSimilarity(queryQGram, titleQGram);
       list.add(jacc);
+      double cos = measureCosineSimilarity(queryQGram, titleQGram);
+      list.add(cos);
     }
 
     // word ngrams
     for (int i = 1; i < 6; i++) {
       String[] queryNgram = wordTokenize(query);
+      list.add(queryNgram.length);
       String[] titleNgram = wordTokenize(title);
+      list.add(titleNgram.length);
 
       list.add(countMatches(queryNgram, titleNgram));
       list.add(getNGramLeftOver(queryNgram, titleNgram));
 
       double jacc = measureJaccardSimilarity(queryNgram, titleNgram);
       list.add(jacc);
+      double cos = measureCosineSimilarity(queryNgram, titleNgram);
+      list.add(cos);
     }
 
     return list.toArray();
+  }
+
+  // shannon entropy of the chars in a string
+  private static double entropy(String s) {
+    HashMultiset<Character> set = HashMultiset.create();
+    for (char c : s.toCharArray()) {
+      set.add(c);
+    }
+
+    double result = 0.0;
+    int len = s.length();
+
+    for (Entry<Character> item : set.entrySet()) {
+      double frequency = (double) item.getCount() / len;
+      result -= frequency * (Math.log(frequency) / Math.log(2));
+    }
+
+    return result;
   }
 
   private static int getNGramLeftOver(String[] queryTokens, String[] titleTokens) {
@@ -222,6 +259,41 @@ public class CreateFeatures {
     }
 
     return ((double) intersection.size()) / (union.size());
+  }
+
+  private static double measureCosineSimilarity(char[] left, char[] right) {
+    if (right == null || left == null) {
+      return 0;
+    }
+
+    TCharHashSet union = new TCharHashSet(left);
+    int termsInLeftString = union.size();
+    TCharHashSet secondStringTokens = new TCharHashSet(right);
+    int termsInRightString = secondStringTokens.size();
+
+    union.addAll(secondStringTokens);
+    int commonTerms = (termsInLeftString + termsInRightString) - union.size();
+
+    return ((double) commonTerms)
+        / (Math.pow(termsInLeftString, 0.5) * Math.pow(termsInRightString, 0.5));
+  }
+
+  private static double measureCosineSimilarity(String[] left, String[] right) {
+    if (right == null || left == null) {
+      return 0;
+    }
+
+    HashSet<String> union = new HashSet<String>(Arrays.asList(left));
+    int termsInLeftString = union.size();
+    HashSet<String> secondStringTokens = new HashSet<String>(
+        Arrays.asList(right));
+    int termsInRightString = secondStringTokens.size();
+
+    union.addAll(secondStringTokens);
+    int commonTerms = (termsInLeftString + termsInRightString) - union.size();
+
+    return ((double) commonTerms)
+        / (Math.pow(termsInLeftString, 0.5) * Math.pow(termsInRightString, 0.5));
   }
 
   private static void run(Path path, boolean isTest) throws IOException {

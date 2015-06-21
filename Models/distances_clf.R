@@ -1,8 +1,8 @@
-#LB SCORE = 0.40
+#LB SCORE = ???
 
 # 10 fold CV
 # QWK        QWK SD    
-# 0.42         0.020
+# 0.53         0.012
 source("QWK.R")
 require(caret)
 require(Metrics)
@@ -27,8 +27,8 @@ dropCols <- c( "wordngcount2",
                "leftngcount5",
                "wordngjacc5" )
 
-train <- train[,!(names(train) %in% dropCols)]
-test <- test[,!(names(test) %in% dropCols)]
+#train <- train[,!(names(train) %in% dropCols)]
+#test <- test[,!(names(test) %in% dropCols)]
 
 testIds <- test$id
 target <- as.factor(train$outcome)
@@ -43,22 +43,20 @@ train <- train[, -dim(train)[2]]
 
 set.seed(65812)
 fc <- trainControl(method = "repeatedCV", summaryFunction=QWK,
-                      number = 10, repeats = 3, verboseIter = TRUE, 
+                      number = 3, repeats = 1, verboseIter = TRUE, 
                       returnResamp = "all", classProbs = TRUE)
 
-grid <-  expand.grid(mtry=c(13))
 
-gbmGrid <-  expand.grid(interaction.depth = c(1, 5, 9),
-                        n.trees = (1:30)*50,
-                        shrinkage = 0.1,
-                        n.minobsinnode = 10)
+#nnetGrid <- expand.grid(size = c(seq(20,100,10)), decay = c(0))
+#model <- train(x = train, y = target, method = "nnet", trControl = fc, metric = "QWK", tuneGrid = nnetGrid, MaxNWts=100000) 
 
-model <- train(x = train, y = target, method = "rf", trControl = fc, metric = "QWK",
-               tuneGrid = grid, nTree = 500) 
+rfGrid <- expand.grid(mtry = c(13:20)) #16
+model <- train(x = train, y = target, method = "rf", trControl = fc, metric = "QWK", tuneGrid = rfGrid) 
+
 model
 #confusionMatrix.train(model)
 
 prediction <- predict(model, test)
 
 submit <- data.frame(id = testIds, prediction = as.integer(prediction))
-write.csv(submit, "submit.csv", row.names = FALSE)
+write.csv(submit, "Distances/Submission/submit.csv", row.names = FALSE)
