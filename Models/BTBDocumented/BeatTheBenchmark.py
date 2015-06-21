@@ -209,8 +209,8 @@ def build_pipe_line():
             # weight components in FeatureUnion
             transformer_weights={
                 'doc':  1.0,
-                'minr': 0.1,
-                'maxr': 0.1
+                'minr': 1.0,
+                'maxr': 1.0
             },
         )),
         # Use a SVC classifier on the combined features
@@ -267,8 +267,8 @@ if __name__ == '__main__':
             param_grid = {
                     'features__cvt__vect__ngram_range' : [(1, 6)],
                     'features__cvt__vect__min_df' :  [3],
-                    'features__cvt__svd__n_components' : list(range(120, 300, 2)),  #220
-                    'features__cvt__svd__n_iter' : [2,4,8],
+                    'features__cvt__svd__n_components' : [180],  #220
+                    'features__cvt__svd__n_iter' : [2],
                     'clf__degree' : [5],
                     'clf__C' : [9]
             }
@@ -283,7 +283,7 @@ if __name__ == '__main__':
         # Initialize Grid Search Model
         # Try many different parameters to find the best fitting model
         model = grid_search.RandomizedSearchCV(
-                n_iter=60,  # number of setting to try
+                n_iter=1,  # number of setting to try
                 estimator=clf,  # Pipeline
                 param_distributions=param_grid,
                 scoring=kappa_scorer,
